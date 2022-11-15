@@ -4,6 +4,7 @@ from pprint import pprint
 
 import requests
 from dotenv import load_dotenv
+from colorama import Fore
 
 from validation import *
 
@@ -15,50 +16,74 @@ def code_snippets(readme: str) -> list[str]:
     return matches
 
 
-def check_snippets_lang(snippets: list[str], language_regex: str, valid: callable):
+def check_snippets(snippets: list[str]) -> list[dict[str, str]]:
+    errors = []
     for snippet in snippets:
-        print('---------------- snippet')
-        print(snippet)
-        if re.match(f'```{language_regex}', snippet, re.IGNORECASE):
-            code = re.sub(f'```{language_regex}|```',
-                          '', snippet, re.IGNORECASE)
-            print(
-                '-------------------------------------------------------------------------')
-            print(code)
-            print(
-                '-------------------------------------------------------------------------')
-            x = valid(code)
-            print(x)
+        valid = True
+        if re.match(r'```py(thon)?', snippet, re.IGNORECASE):
+            code = re.sub(f'```py(thon)?|```', '', snippet, re.IGNORECASE)
+            valid, error = valid_python(code)
+            language = 'python'
+        elif re.match(r'```json', snippet, re.IGNORECASE):
+            code = re.sub(r'```json|```', '', snippet, re.IGNORECASE)
+            valid, error = valid_json(code)
+            language = 'json'
+        elif re.match(r'```html', snippet, re.IGNORECASE):
+            code = re.sub(r'```html|```', '', snippet, re.IGNORECASE)
+            valid, error = valid_html(code)
+            language = 'html'
+        elif re.match(r'```xml', snippet, re.IGNORECASE):
+            code = re.sub(r'```xml|```', '', snippet, re.IGNORECASE)
+            valid, error = valid_xml(code)
+            language = 'xml'
+        
+        if not valid:
+            errors.append({
+                'language': language,
+                'code': snippet,
+                'error': error
+            })
+            
+    return errors
 
+def display_errors(readme_url: str, errors: list[dict[str, str]]):
+    if errors:
+        print(Fore.CYAN + f'{readme_url}')
+        print(Fore.RED + f'{len(errors)} errors' + Fore.WHITE)
+        for i, error in enumerate(errors):
+            title = f' SNIPPET {i + 1} ({error["language"].upper()}) '
+            print(f'{title:-^80}')
+            print(error['code'])
+            print(Fore.RED + f'Error: {error["error"]}' + Fore.WHITE)
+            print()
+        print('\n')
+    
 
-def check_snippets(snippets: list[str]):
-    check_snippets_lang(snippets, 'py(thon)?', valid_python)
-    check_snippets_lang(snippets, 'json', valid_json)
-    check_snippets_lang(snippets, 'html', valid_html)
-    check_snippets_lang(snippets, 'xml', valid_xml)
+if __name__ == '__main__':
+    TOKEN = os.getenv('TOKEN')  # Read GitHub account TOKEN variable from .env file
+    headers = {
+        'Authorization': f'Token {TOKEN}'
+    }
 
+    page = 1
+    # Search for README.md files containing three tick marks (```) denoting code snippets
+    url = f"https://api.github.com/search/code?q=```filename:README.md+language:markdown+page={page}"
+    response = requests.request("GET", url, headers=headers)
 
-TOKEN = os.getenv('TOKEN')  # Read GitHub account TOKEN variable from .env file
-headers = {
-    'Authorization': f'Token {TOKEN}'
-}
+    if response.status_code == 200:
+        d = response.json()
+        pprint(d)
 
-url = "https://api.github.com/search/code?q=```filename:README.md+language:markdown"
-response = requests.request("GET", url, headers=headers)
+        for result in d['items']:
+            readme_url = result['html_url']
+            raw_readme_url = readme_url.replace(
+                'https://github.com', 'https://raw.githubusercontent.com').replace('blob/', '')
 
-if response.status_code == 200:
-    d = response.json()
-    pprint(d)
-
-    for result in d['items']:
-        readme_url = result['html_url']
-        raw_readme_url = readme_url.replace(
-            'https://github.com', 'https://raw.githubusercontent.com').replace('blob/', '')
-
-        response = requests.get(raw_readme_url)
-        if response.status_code == 200:
-            readme = response.text
-            snippets = code_snippets(readme)
-            check_snippets(snippets)
-else:
-    print(f'error: status code - {response.status_code}')
+            response = requests.get(raw_readme_url)
+            if response.status_code == 200:
+                readme = response.text
+                snippets = code_snippets(readme)
+                errors = check_snippets(snippets)
+                display_errors(readme_url, errors)
+    else:
+        print(f'error: status code - {response.status_code}')
