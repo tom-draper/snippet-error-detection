@@ -1,10 +1,11 @@
-from pprint import pprint
-import requests
 import os
 import re
+from pprint import pprint
+
+import requests
 from dotenv import load_dotenv
-import ast
-import json
+
+from validation import *
 
 load_dotenv()
 
@@ -12,22 +13,6 @@ load_dotenv()
 def code_snippets(readme: str) -> list[str]:
     matches = re.findall(r'```[^`]*?```', readme)
     return matches
-
-
-def valid_python(code: str) -> bool:
-    try:
-        ast.parse(code)
-    except SyntaxError:
-        return False
-    return True
-
-
-def valid_json(code: str) -> bool:
-    try:
-        json.loads(code)
-    except ValueError:
-        return False
-    return True
 
 
 def check_snippets_lang(snippets: list[str], language_regex: str, valid: callable):
@@ -49,6 +34,8 @@ def check_snippets_lang(snippets: list[str], language_regex: str, valid: callabl
 def check_snippets(snippets: list[str]):
     check_snippets_lang(snippets, 'py(thon)?', valid_python)
     check_snippets_lang(snippets, 'json', valid_json)
+    check_snippets_lang(snippets, 'html', valid_html)
+    check_snippets_lang(snippets, 'xml', valid_xml)
 
 
 TOKEN = os.getenv('TOKEN')  # Read GitHub account TOKEN variable from .env file
@@ -74,4 +61,4 @@ if response.status_code == 200:
             snippets = code_snippets(readme)
             check_snippets(snippets)
 else:
-    print(f'error: status code: {response.status_code}')
+    print(f'error: status code - {response.status_code}')
