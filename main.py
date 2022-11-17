@@ -16,8 +16,7 @@ def code_snippets(readme: str) -> list[str]:
     return matches
 
 
-def check_snippets(snippets: list[str]) -> list[dict[str, str]]:
-    errors = []
+def collect_errors(url: str, snippets: list[str], errors: list[dict]) -> list[dict[str, str]]:
     for snippet in snippets:
         valid = True
         if re.match(r'```py(thon)?', snippet, re.IGNORECASE):
@@ -39,51 +38,65 @@ def check_snippets(snippets: list[str]) -> list[dict[str, str]]:
         
         if not valid:
             errors.append({
+                'url': url,
                 'language': language,
                 'code': snippet,
                 'error': error
             })
-            
-    return errors
 
-def display_errors(readme_url: str, errors: list[dict[str, str]]):
+def display_errors(errors: list[dict[str, str]]):
     if errors:
-        print(Fore.CYAN + f'{readme_url}')
-        print(Fore.RED + f'{len(errors)} errors' + Fore.WHITE)
         for i, error in enumerate(errors):
-            title = f' SNIPPET {i + 1} ({error["language"].upper()}) '
-            print(f'{title:-^80}')
+            print(Fore.CYAN + f'{error["url"]}')
+            print(Fore.RED + f'Potential error {i + 1} ({error["language"].upper()})' + Fore.WHITE)
             print(error['code'])
             print(Fore.RED + f'Error: {error["error"]}' + Fore.WHITE)
             print()
         print('\n')
-    
 
-if __name__ == '__main__':
+def fetch_snippets(pages: int = 1) -> list[dict]:
     TOKEN = os.getenv('TOKEN')  # Read GitHub account TOKEN variable from .env file
     headers = {
         'Authorization': f'Token {TOKEN}'
     }
 
-    page = 1
-    # Search for README.md files containing three tick marks (```) denoting code snippets
-    url = f"https://api.github.com/search/code?q=```filename:README.md+language:markdown+page={page}"
-    response = requests.request("GET", url, headers=headers)
+    num_readmes = 0
+    num_snippets = 0
+    errors = []
+    for p in range(1, pages+1):
+        # Search for README.md files containing three tick marks (```) denoting code snippets
+        url = f"https://api.github.com/search/code?q=```filename:README.md+language:markdown+page={p}"
+        print(f'Fetching {url}')
+        response = requests.request("GET", url, headers=headers)
 
-    if response.status_code == 200:
-        d = response.json()
-        pprint(d)
+        if response.status_code == 200:
+            d = response.json()
+            print(f'{d["total_count"]} results')
+            num_readmes += 1
 
-        for result in d['items']:
-            readme_url = result['html_url']
-            raw_readme_url = readme_url.replace(
-                'https://github.com', 'https://raw.githubusercontent.com').replace('blob/', '')
+            for result in d['items']:
+                readme_url = result['html_url']
+                readme_raw_url = readme_url.replace(
+                    'https://github.com', 'https://raw.githubusercontent.com').replace('blob/', '')
 
-            response = requests.get(raw_readme_url)
-            if response.status_code == 200:
-                readme = response.text
-                snippets = code_snippets(readme)
-                errors = check_snippets(snippets)
-                display_errors(readme_url, errors)
-    else:
-        print(f'error: status code - {response.status_code}')
+                response = requests.get(readme_raw_url)
+                if response.status_code == 200:
+                    readme_content = response.text
+                    snippets = code_snippets(readme_content)
+                    num_snippets += len(snippets)
+                    collect_errors(readme_url, snippets, errors)
+        else:
+            print(f'Error: status code - {response.status_code}')
+            break
+    
+    print(f'{num_readmes} readme\'s analysed')
+    print(f'{num_snippets} snippets analyzed')
+        
+    return errors
+    
+    
+
+if __name__ == '__main__':
+    errors = fetch_snippets(pages=2)
+    print(Fore.RED + f'{len(errors)} potential errors detected' + Fore.WHITE)
+    display_errors(errors)
