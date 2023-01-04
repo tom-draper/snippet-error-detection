@@ -1,5 +1,4 @@
 from validation import *
-from js2py.internals.simplex import JsException
 
 def test_valid_javascript():
     x1 = valid_javascript('var x = 0;')

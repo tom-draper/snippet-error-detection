@@ -4,7 +4,8 @@ from pprint import pprint
 
 import requests
 from dotenv import load_dotenv
-from colorama import Fore
+from colorama import Fore, init
+init(autoreset=True)
 
 from validation import *
 
@@ -35,10 +36,10 @@ def collect_errors(url: str, snippets: list[str], languages: set[str], errors: l
             code = re.sub(r'```xml|```', '', snippet, re.IGNORECASE)
             valid, error = valid_xml(code)
             language = 'xml'
-        elif 'javascript' in languages and re.match(r'```xml', snippet, re.IGNORECASE):
-            code = re.sub(r'```xml|```', '', snippet, re.IGNORECASE)
-            valid, error = valid_xml(code)
-            language = 'xml'
+        elif 'javascript' in languages and re.match(r'```(js|javascript)', snippet, re.IGNORECASE):
+            code = re.sub(r'```(js|javascript)|```', '', snippet, re.IGNORECASE)
+            valid, error = valid_javascript(code)
+            language = 'javascript'
         
         if not valid:
             errors.append({
@@ -52,9 +53,9 @@ def display_errors(errors: list[dict[str, str]]):
     if errors:
         for i, error in enumerate(errors):
             print(Fore.CYAN + f'{error["url"]}')
-            print(Fore.RED + f'Potential error {i + 1} ({error["language"].upper()})' + Fore.WHITE)
+            print(Fore.RED + f'Potential error {i + 1} ({error["language"].upper()})')
             print(error['code'].replace('\n', '\n|  '))
-            print(Fore.RED + f'Error: {error["error"]}' + Fore.WHITE)
+            print(Fore.RED + f'Error: {error["error"]}')
             print()
         print('\n')
 
@@ -68,7 +69,7 @@ def fetch_snippets(pages: tuple[int, int] = (0, 1)) -> list[dict]:
     counter = {'readme': 0, 'snippets': 0}
     for p in range(pages[0], pages[1]):
         # Search for README.md files containing three tick marks (```) denoting code snippets
-        url = f"https://api.github.com/search/code?q=```filename:README.md+language:markdown+page={p}&sort=stars&order=desc"
+        url = f"https://api.github.com/search/code?q=```+in:file+filename:README.md+extension:md+page={p}&per_page=100&sort=stars&order=desc"
         # url = f"https://api.github.com/search/code?q=filename:README.md+language:markdown+page={p}&sort=stars&order=desc"
         print(f'Fetching {url}')
         response = requests.request("GET", url, headers=headers)
@@ -78,8 +79,7 @@ def fetch_snippets(pages: tuple[int, int] = (0, 1)) -> list[dict]:
             print(f'{d["total_count"]} results, {len(d["items"])} items')
             for result in d['items']:
                 readme_url = result['html_url']
-                readme_raw_url = readme_url.replace(
-                    'https://github.com', 'https://raw.githubusercontent.com').replace('blob/', '')
+                readme_raw_url = readme_url.replace('https://github.com', 'https://raw.githubusercontent.com').replace('blob/', '')
 
                 print(f'Fetching {readme_raw_url}')
                 response = requests.get(readme_raw_url)
@@ -87,10 +87,11 @@ def fetch_snippets(pages: tuple[int, int] = (0, 1)) -> list[dict]:
                     readme_content = response.text
                     snippets = code_snippets(readme_content)
                     counter['snippets'] += len(snippets)
-                    collect_errors(readme_url, snippets, {'python', 'javascript', 'xml', 'json', 'html'}, errors)
+                    collect_errors(readme_url, snippets, {'python', 'json', 'xml', 'html'}, errors)
                 counter['readme'] += 1
         else:
             print(f'Error: status code - {response.status_code}')
+            print(response.text)
             break
     
     print(f'{counter["readme"]} README.md analysed')
